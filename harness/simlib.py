@@ -93,9 +93,13 @@ def ensure_eval_repo() -> None:
 def check_controller_installed() -> list[str]:
     """Files that differ between this repo and the copy the sim executes."""
     diff = []
+
+    def body(p: Path) -> bytes:
+        return p.read_bytes().replace(bytes([13, 10]), bytes([10]))   # git may check out CRLF or LF; only content matters
+
     for f in controller_files():
         a, b = REPO / f, SOLUTION_REPO / f
-        if a.exists() and (not b.exists() or a.read_bytes() != b.read_bytes()):
+        if a.exists() and (not b.exists() or body(a) != body(b)):
             diff.append(f)
     return diff
 
