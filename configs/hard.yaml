@@ -1,0 +1,31 @@
+# Hard scenario: every organiser-variable parameter pushed toward its adverse
+# end, combined.  See docs/hard-config.md for the reasoning and the baseline.
+# Additive: configs/default.yaml and the organisers' COMPETITION_SIM are untouched.
+name: hard
+
+debris:
+  num: 700                 # +40 % rocks (500 -> 700)
+  spread_m: [220.0, 220.0, 450.0]   # tighter box: ~2.9x the number density of the default field
+  vertical_offset_m: 500.0
+  weights: [0.35, 0.35, 0.15, 0.15] # 3x more exploded tanks (17 m, radar-invisible beyond the first 150)
+  speed_frac: [0.10, 0.20]          # 0.8 .. 1.6 m/s, twice the default debris speed
+  scale_mult: 1.3                   # rocks 30 % larger in diameter (2.2x mass)
+  angvel_max_rad_s: 0.2
+
+radar:
+  num: 150                 # radar reports fewer rocks (150 of 700 instead of 200 of 500)
+  position_1sigma_m: 3.0   # noisier
+  velocity_1sigma_m_s: 0.04
+  diameter_1sigma_fraction: 0.10
+  loop_hz: 60.0            # slower refresh: each reported rock revisited every 2.5 s (default: 200 rocks at 120 Hz = 1.67 s)
+
+scoring:
+  DamageThreshold_J: 150000.0   # less damage tolerated before the run is lost
+  NominalFuel_kg: 1.0           # fuel penalty starts earlier
+  NominalTime_s: 110.0          # time score harder to earn
+  KeepOutRadius_m: 40.0         # must get 10 m closer to the ship
+
+shuttle:
+  max_accel_m_s2: 0.4           # 20 % less control authority
+  max_ang_accel_rad_s2: 0.04
+  controller_loop_hz: 60.0

@@ -1,0 +1,4 @@
+# For the launcher / evaluation scripts (run with your normal Python 3.9+, not the sim's bundled one).
+# The controller itself runs inside Space Teams PRO's own Python, which already has numpy.
+numpy>=1.24
+PyYAML>=6.0
