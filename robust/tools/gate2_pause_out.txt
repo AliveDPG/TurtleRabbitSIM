@@ -1,0 +1,5 @@
+no-rock episode flies 5.04 m/s (the launch burn); fuel below is the extra over that, kg
+off_pause       threat n=15 switches/ep= 50.0 flips= 338 extra kg mean=  2.2 max=  6.0 contacts=3 gap med=  5.7
+off_pause       pass   n=12 switches/ep= 21.5 flips= 119 extra kg mean=  0.5 max=  2.2 contacts=0 gap med= 15.6
+excess10_pause  threat n=15 switches/ep=  4.1 flips=   0 extra kg mean=  2.0 max=  6.0 contacts=3 gap med=  8.1
+excess10_pause  pass   n=12 switches/ep=  2.2 flips=   0 extra kg mean=  0.4 max=  1.8 contacts=0 gap med= 15.9
