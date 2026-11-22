@@ -155,6 +155,10 @@ RB_KICK_DIR = os.environ.get("RB_KICK_DIR", "x")   # TEST ONLY: strong kick dire
 RB_KICK = os.environ.get("RB_KICK", "")   # TEST ONLY "T": from T s, brake on -x and spin up to 0.5 rad/s (hit-like upset)
 RB_PADPAUSE = os.environ.get("RB_PADPAUSE", "0") == "1"   # burn pauses allowed during the pad watch too (first 45 s)
 RB_KICK_T = float(os.environ.get("RB_KICK_T", "0"))   # TEST ONLY: from this time, yaw the hull until the nose is 90 deg off, then release
+RB_BIG_MARGIN = float(os.environ.get("RB_BIG_MARGIN", "0"))   # milestone 5: extra contact margin (m) for radar rocks of radius >= 10 m (0 = off)
+RB_TICK_SLEEP = float(os.environ.get("RB_TICK_SLEEP", "0")) / 1000.0   # TEST ONLY (milestone 5 F3): extra sleep per loop tick, ms
+RB_BIG_LOOK = float(os.environ.get("RB_BIG_LOOK", "0"))       # milestone 5: look-ahead (s) for settled radar rocks of radius >= 10 m (0 = off)
+RB_KICK_GATE = float(os.environ.get("RB_KICK_GATE", "0"))     # milestone 5: P gate for such rocks while their velocity sigma >= 0.4 m/s (0 = off)
 
 # Pre-launch watchdog.  The checkpoints between the set-up steps only run when a step finishes: one slow step
 # (a slow disk, a loaded machine) left the held pitch command unchecked and the hull over-rotated (0.28 rad/s at an
@@ -384,7 +388,9 @@ GP = guidance.GuideParams(v_cruise=CRUISE_SPEED_MPS, keep_out_m=KEEP_OUT, edge_d
                           edge_pmax=WINDOW_EDGE_P_MAX, p_gate=P_GATE, hit_pts=HIT_COST_PTS,
                           short_pts=10.0 if HIT_COST_PTS > 0 else 0.0, near_fix=RB_NEAR, near_lag_from_m=RB_NEAR_FROM,
                           gate_hold_s=RB_GATE_HOLD, gate_mode=RB_GATE_MODE,
-                          recover_score=RB_RECOVER_SCORE, recover_slow=(0.4, 0.6, 0.8) if RB_RECOVER_SCORE else (0.6, 0.8))
+                          recover_score=RB_RECOVER_SCORE, recover_slow=(0.4, 0.6, 0.8) if RB_RECOVER_SCORE else (0.6, 0.8),
+                          big_margin_m=RB_BIG_MARGIN, kick_gate=RB_KICK_GATE, big_look_s=RB_BIG_LOOK,
+                          big_look_edge_p=float(os.environ.get("RB_BIG_LOOK_EDGE", "0")))
 pulser = Pulser(shuttle.getMass(), np.asarray(shuttle.getInertia(shuttleFrame), float))
 prelaunch_check()
 for _pair in ((4, 3), (4, 2), (0, 3), (0, 2)):      # solve the pitch-over pairs (+z / +x with -+y) now, not in flight
@@ -484,7 +490,8 @@ def relevant(obs, p, v):
         return None
     rel = obs["pos"] - p
     dist = np.linalg.norm(rel, axis=1)
-    reach = (float(np.linalg.norm(v)) + np.linalg.norm(obs["vel"], axis=1) + 6.0) * GP.horizon_s + obs["rad"] + 30.0
+    hz = np.where(obs["rad"] >= GP.big_rad_m, max(GP.horizon_s, GP.big_look_s), GP.horizon_s) if GP.big_look_s > 0 else GP.horizon_s
+    reach = (float(np.linalg.norm(v)) + np.linalg.norm(obs["vel"], axis=1) + 6.0) * hz + obs["rad"] + 30.0
     keep = dist < reach
     # and in front of us or closing
     closing = -np.einsum("ij,ij->i", rel, obs["vel"] - v[None, :]) / np.maximum(dist, 1.0)
@@ -522,6 +529,8 @@ while True:
     # same cadence as time.sleep(1 / loop_hz) at 1x; at sim timescale k each tick spans the same sim time
     timescale = st.SimGlobals.SimClock.GetTimescale() or 1.0
     time.sleep(max(0.0, 1.0 / (loop_hz * timescale) + (time.perf_counter() - t_wake) * (1.0 / timescale - 1.0)))
+    if RB_TICK_SLEEP > 0:
+        time.sleep(RB_TICK_SLEEP)    # TEST ONLY: a slower machine (loop-rate sensitivity)
     t_wake = time.perf_counter()
     t = sim_time()
     if t_first is None:
@@ -529,7 +538,7 @@ while True:
         with prelaunch_lock:             # the watchdog must not send anything once the loop commands the jets
             prelaunch["handover"] = True
         log(f"first loop tick at t={t:.2f}s (watchdog {'on' if RB_WATCH else 'off'}, injected delay {RB_DELAY:.1f}s, "
-            f"pre-launch cut {'yes' if prelaunch['cut'] else 'no'}; near {int(RB_NEAR)}/{RB_NEAR_FROM:.0f} gate_hold {RB_GATE_HOLD:.0f} {RB_GATE_MODE} brake {os.environ.get('RB_BRAKE', '0')} recover {os.environ.get('RB_RECOVER', '0')}/{os.environ.get('RB_RECOVER_DEG', '0')} kick {RB_KICK_T:.0f} padpause {int(RB_PADPAUSE)} recover_plan {int(RB_RECOVER_PLAN)} burn_deg {os.environ.get('RB_RECOVER_BURN_DEG', '0')} kick2 {RB_KICK or '-'}/{RB_KICK_STRONG:.0f} rscore {int(RB_RECOVER_SCORE)} dvburn {os.environ.get('RB_RECOVER_DVBURN', '0')})")
+            f"pre-launch cut {'yes' if prelaunch['cut'] else 'no'}; near {int(RB_NEAR)}/{RB_NEAR_FROM:.0f} gate_hold {RB_GATE_HOLD:.0f} {RB_GATE_MODE} brake {os.environ.get('RB_BRAKE', '0')} recover {os.environ.get('RB_RECOVER', '0')}/{os.environ.get('RB_RECOVER_DEG', '0')} kick {RB_KICK_T:.0f} padpause {int(RB_PADPAUSE)} recover_plan {int(RB_RECOVER_PLAN)} burn_deg {os.environ.get('RB_RECOVER_BURN_DEG', '0')} kick2 {RB_KICK or '-'}/{RB_KICK_STRONG:.0f} rscore {int(RB_RECOVER_SCORE)} dvburn {os.environ.get('RB_RECOVER_DVBURN', '0')} bigm {RB_BIG_MARGIN:.0f} kgate {RB_KICK_GATE:.2f} blook {RB_BIG_LOOK:.0f} tsleep {RB_TICK_SLEEP*1000:.0f} bkeep {os.environ.get('RB_BRAKE_KEEP', '0')})")
 
     lva = shuttle.getLocVelAcc()
     p = np.asarray(lva.loc_WRT_ExprIn(phobosFrame), float)

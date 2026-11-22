@@ -41,6 +41,11 @@ RECOVER_DVBURN = os.environ.get("RB_RECOVER_DVBURN", "0") == "1"   # after a tum
 RECOVER_BURN = math.radians(float(os.environ.get("RB_RECOVER_BURN_DEG", "0")))   # ... translation held while the nose is this far off (0 = off)
 RECOVER_ATT = math.radians(float(os.environ.get("RB_RECOVER_DEG", "0")))   # ... and whenever the nose is this far off in flight (0 = off)
 SLEW_BRAKE_BAND = 0.01                  # rad/s above the braking curve that triggers full-strength braking
+# robust (milestone 5): the full-strength brake cost 0.55-0.75 kg in every launch (speed at 15 s 1.05 vs 1.23 m/s at
+# equal fuel: xp_brake vs xp_ctrl, conf, m4c, m5a); with RB_BRAKE_KEEP=1 the translation keeps its launch share of
+# the ticks while braking once the nose is within PAD_ALIGN of the burn, and the brake gain is SLEW_BRAKE_K_KEEP.
+SLEW_BRAKE_KEEP = os.environ.get("RB_BRAKE_KEEP", "0") == "1"
+SLEW_BRAKE_K_KEEP = float(os.environ.get("RB_BRAKE_K", "5.0"))
 
 ALIGN_DV_MIN = 0.4                      # m/s: a smaller velocity error is flown as it is
 ALIGN_HORIZON_S = 15.0                  # s of burn expected before the plan changes again: only that part profits
@@ -377,8 +382,13 @@ class ThrustLaw:
         if SLEW_BRAKE and self.slewing and self.active:
             excess = float(np.linalg.norm(np.asarray(omega_b, float)[1:])) - float(np.linalg.norm(w_des[1:]))
             if excess > SLEW_BRAKE_BAND:
-                alpha_body = self.rate_loop(w_des, omega_b, ALPHA_TUMBLE, k_rate=20.0)
-                self.pulser.trans_min_share = 0.0
+                if SLEW_BRAKE_KEEP:
+                    alpha_body = self.rate_loop(w_des, omega_b, ALPHA_TUMBLE, k_rate=SLEW_BRAKE_K_KEEP)
+                    if att_err > PAD_ALIGN:
+                        self.pulser.trans_min_share = 0.0
+                else:
+                    alpha_body = self.rate_loop(w_des, omega_b, ALPHA_TUMBLE, k_rate=20.0)
+                    self.pulser.trans_min_share = 0.0
 
         # Tumble recovery.  A rock contact leaves the hull spinning at 2-4.5 rad/s.  The in-flight rate loop is
         # capped at ALPHA_HOLD (160 s for 4.5 rad/s) and a burn would go on at full duty on whatever axis sweeps

@@ -1,0 +1,8 @@
+look=   0 d406 threat n=18 contacts=0 gap med   7.6 min   4.5 | extra kg mean  0.98 | delay s mean   7.6 | points mean  3.37
+look=   0 d406 pass   n=18 contacts=0 gap med  16.6 min   7.3 | extra kg mean -0.01 | delay s mean   0.3 | points mean  0.06
+look=   0 d208 threat n=18 contacts=0 gap med   7.0 min   4.2 | extra kg mean  3.38 | delay s mean   6.3 | points mean  6.21
+look=   0 d208 pass   n=18 contacts=0 gap med  13.6 min   6.9 | extra kg mean -0.12 | delay s mean   0.9 | points mean  0.09
+look=  35 d406 threat n=18 contacts=0 gap med   8.9 min   3.9 | extra kg mean -0.15 | delay s mean   8.6 | points mean  2.14
+look=  35 d406 pass   n=18 contacts=0 gap med  16.6 min   7.3 | extra kg mean -0.01 | delay s mean   0.4 | points mean  0.08
+look=  35 d208 threat n=18 contacts=0 gap med   7.2 min   3.3 | extra kg mean  1.34 | delay s mean   4.4 | points mean  2.97
+look=  35 d208 pass   n=18 contacts=0 gap med  13.6 min   7.2 | extra kg mean -0.05 | delay s mean   1.1 | points mean  0.23

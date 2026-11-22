@@ -135,6 +135,22 @@ class GuideParams:
     pause_min_speed: float = 1.0     # m/s: never stall on or just above the pad
     pause_budget_s: float = 25.0     # total pause per flight
     pause_slack_pts: float = 8.0     # a pause may carry this much more risk than the safest plan that burns at once
+    # robust (milestone 5): extra contact margin for large radar-tracked rocks (radius >= big_rad_m, id with a radar
+    # track 'r..').  Most losses on seed 8193 are such rocks (Debris406, 26 m) knocked by a neighbour after the dodge
+    # left a few metres of clearance.  0 = off.
+    big_margin_m: float = 0.0
+    big_rad_m: float = 10.0
+    # ... and a lower P gate for such rocks while their velocity is uncertain (after a contact the radar track's
+    # velocity sigma is metres per second, P spreads below the 0.3 gate and the rock vanished from planning until
+    # 1-8 s before the hit).  0 = off.
+    kick_gate: float = 0.0
+    kick_gate_sv: float = 0.4
+    # ... and a longer look-ahead (s) for such rocks while their track is settled (velocity sigma < big_look_sv):
+    # Debris406 / Debris208 are radar-tracked from t = 3 s, predicted to 1-6 m 30 s ahead, but were first priced at
+    # the 22 s window edge, where only a 15 s burn pause or a large turn still clears them.  0 = off.
+    big_look_s: float = 0.0
+    big_look_sv: float = 0.15
+    big_look_edge_p: float = 0.0     # ... rocks at the far window edge count only above this P (0 = no edge rule)
 
 
 @dataclass
@@ -348,7 +364,13 @@ class Planner:
         coll = np.zeros(len(C))
         info = PlanInfo()
         if obs is not None and len(obs["rad"]):
-            taus = np.arange(0.0, P.horizon_s + 1e-9, P.dt_tau)
+            big_look = None
+            if P.big_look_s > P.horizon_s:
+                big_look = (np.array([str(i).startswith("r") for i in obs["ids"]], bool) & (obs["rad"] >= P.big_rad_m)
+                            & (np.asarray(obs["sigv"], float) < P.big_look_sv))
+                if not big_look.any():
+                    big_look = None
+            taus = np.arange(0.0, (P.big_look_s if big_look is not None else P.horizon_s) + 1e-9, P.dt_tau)
             e = dvC / np.maximum(dvn, 1e-9)[:, None]
             tl = np.maximum(taus[None, :] - lat[:, None], 0.0)
             s = np.where(tl < t_burn[:, None], 0.5 * a_eff[:, None] * tl ** 2, dvn[:, None] * (tl - 0.5 * t_burn[:, None]))   # (C,T)
@@ -357,9 +379,16 @@ class Planner:
             rock = rel0[:, None, :] - obs["vel"][:, None, :] * taus[None, :, None]                           # (N,T,3)
             sep = rock[None, :, :, :] + own[:, None, :, :]                                                     # (C,N,T,3)
             dist = np.sqrt((sep ** 2).sum(axis=3))                                                             # (C,N,T)
+            if big_look is not None:
+                # other rocks keep the normal window: samples beyond it do not exist for them
+                beyond = taus > P.horizon_s + 1e-9
+                dist[:, ~big_look, :] = np.where(beyond[None, None, :], np.inf, dist[:, ~big_look, :])
             rad = obs["rad"]
             margin = np.where(rad < P.small_rad_m, P.margin_small_m, P.margin_m)
             margin = np.where(rad < P.small_rad_m, np.maximum(margin, P.small_k * rad - rad - P.shuttle_r), margin)
+            if P.big_margin_m > 0.0:
+                isr = np.array([str(i).startswith("r") for i in obs["ids"]], bool)
+                margin = margin + np.where(isr & (rad >= P.big_rad_m), P.big_margin_m, 0.0)
             Rc = (rad + P.shuttle_r + margin)[None, :]                   # contact radius
             kmin = np.argmin(dist, axis=2)                                                                     # (C,N)
             m = np.take_along_axis(dist, kmin[:, :, None], axis=2)[:, :, 0]
@@ -373,9 +402,20 @@ class Planner:
             wide = np.asarray(obs["wide"], float)[None, :]
             Phit = (1.0 - eps) * p_disc(m, Rc, sig_t)
             Phit = Phit + eps * p_disc(m, Rc, np.minimum(sig_t * wide, P.sigma_cap))
+            if big_look is not None and P.big_look_edge_p > 0.0:
+                # A long-window rock whose closest approach is still beyond the window end asked for one small turn
+                # per window slide (0.46 m/s at 16, 17, 20 s for Debris208 in flight, aim miss 80 -> 240 m): it is
+                # judged once its closest approach is inside the window, unless the hit is already likely.
+                k_last = len(taus) - 1
+                far_edge = big_look[None, :] & (kmin == k_last) & (kmin[0] == k_last)[None, :] & (Phit < P.big_look_edge_p)
+                Phit = np.where(far_edge, 0.0, Phit)
             if P.p_gate > 0.0:
                 # The dodge is sized on the full probability, so a turn cannot stop just under the gate.
-                on = Phit[0] >= P.p_gate
+                gate_v = P.p_gate
+                if P.kick_gate > 0.0:
+                    isr_k = np.array([str(i).startswith("r") for i in obs["ids"]], bool)
+                    gate_v = np.where(isr_k & (rad >= P.big_rad_m) & (np.asarray(obs["sigv"], float) >= P.kick_gate_sv), P.kick_gate, P.p_gate)
+                on = Phit[0] >= gate_v
                 held = np.zeros_like(on)
                 if P.gate_hold_s > 0.0 or P.gate_mode == "hyst":
                     toks = [str(i).split("+") for i in obs["ids"]]

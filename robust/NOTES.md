@@ -387,3 +387,280 @@ flight (r158, 21 m/s): luck of the knock, not the change. Also this session was 
 median 46 here vs 46 in conf, but candidate fell from 41 to 25).
 Conclusion: RB_NEAR_FROM=600 rejected. Recommended config stays the milestone-3 one (RB_NEAR_FROM unset).
 Cleanup done: no rig processes, no lock, frozen files restored and verified with cmp, header byte-identical.
+
+# Milestone 5
+
+Load at start (06:36): free RAM 19.3 GB, Ollama running with no model loaded (`ollama ps` empty), Roblox Player
+idle (2 processes, ~190 MB), no other sims. Python interpreter for offline tools that import guidance.py (scipy):
+`%LOCALAPPDATA%/SimDynamX/STPro/Versions/v0.55.0/py/Scripts/python.exe` (the system python has no scipy).
+
+## A. Reference head-to-head (running): `tools/chain_m5.sh`
+`bash robust/tools/chain_m5.sh m5a "<r3 env>" r3 "RB_NONE=1" base 40 6 18000`: two lanes, 6 flights per lane per
+batch, arms swapped every batch, until 40 scored per arm, 5 h, or `results/eval/m5a.stop` exists (checked between
+batches); single-lane fallback below 5 GB free; load logged per batch in `results/eval/m5a.progress`. Baseline arm =
+robust/ with all switches off (same code paths as submission/, milestone 1 eq2). Table: `tools/m5table.py m5a r3 base`.
+
+### A result (m5a1-m5a11, 06:36-12:15; 7 two-lane batches + 4 single-lane batches)
+Load: Ollama gpt-oss:20b (12 GB) was loaded by another user from 07:04 on and off (free RAM 0.4-3.6 GB at times):
+m5a2, m5a4, m5a6, m5a8, m5a9 ran single-lane alternating with memory waits; m5a3/m5a5 started two-lane at 5.3-6.5
+GB free and ran with 0.7 GB free (1 rig failure). From 11:14 the model was stopped with `ollama stop gpt-oss:20b`
+(owner allowed). The first chain process was stopped at 10:59 (script edited for continuation) and continued with
+I0=9; robust/*.py were updated to the dev copy at 11:07 between single-lane flights (new switches default off,
+identical behaviour, regression-checked).
+| | round 3 (r3) | baseline (all off) |
+|---|---|---|
+| flights scored (+ rig failures) | 46 (+0) | 43 (+3) |
+| undamaged 43+ / undamaged < 43 | 30 / 15 | 20 / 11 |
+| contacts / lost / unfinished | 1 / 1 / 0 | 12 / 2 / 0 |
+| median / mean | 48.0 / -5.6 | 42.0 / -39.8 |
+| worst / p10 | -2022.9 / 6.6 | -1903.3 / -119.1 |
+| median fuel | 40.5 kg | 45.0 kg |
+Fisher (two-sided): contacts 1/46 vs 12/43 p = 0.001; lost-or-unfinished 1/46 vs 2/43 p = 0.61.
+Contacts: r3: Debris406 knocked (7.8 m/s) at 63 s, 175 kJ, scored as a loss. Baseline: Debris208 x8 (52-58 s,
+3-63 kJ, all during the dodge flip-flop the gate memory removes), Debris406 knocked x2 (10.0 m/s 118 kJ; 6.3 m/s
+1.9 MJ lost), Debris386 7.8 m/s (128 kJ, lost), Debris311 (7 kJ).
+Launch waste (C) on the unloaded A data: 2.93 vs 2.35 kg at 15 s, 4.63 vs 4.02 at 30 s, speed at 30 s 3.10 vs
+3.36 m/s: the RB_BRAKE cost persists unloaded.
+
+## B. Knock study (offline; truth recordings used for analysis only)
+Data: 203 logged contacts with a rock name (`collisions.json` of every run under results/runs), 12 truth recordings
+(`results/tracking_audit/cache/gt_*.npz`, 19 Nov, 500 rocks at ~10 Hz) with their sensor recordings
+(`D:/STU4-recordings/STU4-evaluation/eval-<stamp>/sensors`).
+Tools: `tools/knock_gt.py` (kick history of chosen rocks in the truth), `tools/knock_replay.py` (recorded radar stream
+through robust/'s own ShuttleNav + DebrisTracker, track vs truth, closest approach predicted from the track at 30-3 s
+lead), `tools/knock_events.py` (every rock-rock contact in the truth, which ones put a rock near the flown path, and
+their pair-contact predictability with radar-quality tracks), `tools/hit_view.py RUN_DIR` (controller messages before
+a contact, rock speed and the true pre-impact relative speed), `tools/exposure.py` (launch hold / lateral offset vs
+the recorded fields).
+
+1. The "18-35 m/s knocked rock" figure is an artefact: the harness `rel_speed_m_s` uses the shuttle velocity AFTER the
+   impact (the hit throws the 3.4 t shuttle to 17-38 m/s). Pre-impact relative speed from `history_5s`: median 7.8,
+   p90 13.7, max 24.3 m/s over 203 contacts. The m4c losses "r157/r158" ARE Debris406 (26 m), tracked by radar
+   from t = 3 s in every flight (track id 157/158).
+2. Seed-8193 era (since 17 Nov, 90 named contacts): Debris406 27 contacts and 21 of the 29 contacts above 500 kJ;
+   Debris208 (31 m, 1.4 m/s) 23 contacts, all below 500 kJ. Debris406 hits at 55-75 s (median 61 s), 1080-1130 m
+   from the target, i.e. 200-260 m from the pad, during or just after the launch burn. Its speed at the hit was
+   3.3-5.5 m/s in 18 of 27 (its normal, unknocked ~4.9-5.5 m/s) and 7.3-20.4 m/s in 9 (knocked).
+3. Truth (12 flights, 1544 s): 6 contacts (Debris406 x2, Debris208 x2, Debris352, Debris353); in all six the rock
+   had no rock-rock contact for >= 50 s before (straight line). 895 rock-rock contacts after t = 10 s (~75 per
+   flight); only 2 put the knocked rock within 20 m of the contact radius of the flown path, 1 inside it (no hit
+   recorded). Debris406 was knocked by Debris311 (r 17 m) at 40-42 s in 2 of 12 flights (sent away, 158-186 m).
+4. Tracking (radar replay, 2 Debris406 losses 012405/013849): one radar track all flight, position error 2-5 m,
+   velocity error 0.05-0.12 m/s, claimed sigma 0.17-0.22 m/s; the closest approach predicted from the track and the
+   flown path was within 1-6 m of the truth from 30 s before (pred 11.7 / 5.7 / 4.2 m at 30 / 20 / 15 s lead vs
+   true 5.1 m). The unknocked hazard is visible 30 s ahead; the older v84 controller in those flights had P 0.7-0.86
+   on it for 30 s and did not switch (coll cost 0 in its log), the current planner sees it at the window edge (tau
+   22 s, P 0.3-0.75) at 38-41 s in ~75 % of flights and dodges once (mostly a burn pause).
+5. Current-code Debris406 contacts: r3 m4c1_a (12.2 m/s, knocked after the dodge), m4c5_a (3.3 m/s, first warning
+   6 s before), m5a1_a (7.8 m/s, knocked after a pause15 dodge at 40 s; the radar obstacle never reappeared, only
+   camera tracks with sigma 11-18 m at tau 5 / 3 s); baseline m2fin_a 212242 (4.1 m/s, first warning 8 s before at
+   sigma 17 m), m4c3_b (20.4), fin1_b (7.3). Pattern: after a contact on the rock the track's velocity sigma is
+   metres per second, P on the plan spreads below the 0.3 gate and the rock drops out of the planning until 1-8 s
+   before the hit.
+6. Knock prediction from tracks (question B1/B2): not useful. Pair-contact prediction for the one relevant truth knock
+   (Debris284/409, 013801) from tracks with 3 m / 0.15 m/s errors gives P 0.34-0.40 at 20-3 s lead (gap median 1-2 m,
+   sd 4-6 m); the outgoing direction depends on the contact geometry known to +-4 m against radii sums of 15-30 m.
+   With 2 relevant out of 895 contacts, a pairwise hazard term would price hundreds of harmless pairs per real
+   event; 0 of 6 truth contacts and at most 9 of 27 Debris406 contacts would be in its scope. Not implemented.
+7. Emergency manoeuvre (B3): axis caps +x 0.175, +y 0.143, -y 0.096, +z 0.096, -z 0.117 m/s^2, one axis per tick.
+   Sideways in 2 / 4 / 6 s: 0.3 / 1.1 / 2.6 m at best (0.12 / 0.5 / 1.1 m at the 0.06 m/s^2 the planner counts on).
+   The main jet needs a re-point first (0.05-0.1 rad/s^2, 0.2 rad/s: 46 deg in 4 s at most, 90 deg in ~10-12 s), so
+   it buys nothing in 2-4 s. Against a 13 m rock plus 3.2 m hull no last-second manoeuvre helps; >= 10-12 s of
+   warning is needed for ~6-10 m.
+8. Route / timing exposure (B3/B4, `tools/exposure.py`, nominal no-dodge path on the 10 truth fields recorded past
+   100 s): conflicts per flight 0.60 (no hold), 0.40-0.60 (hold 3-15 s), 0.30-1.00 (lateral offset +-40/80 m);
+   Debris406 clearance < 10 m in 3/10 flights with no hold, 0/10 with a 6 s hold (median 16.5 -> 26.8 m), but
+   Debris208 conflicts stay 3/10 for every hold. 10 fields is too few to separate the variants, the knocked-rock
+   risk cannot be evaluated this way, and an 80 m offset at s ~ 200 m costs ~5 m/s. Not implemented.
+
+9. What was implemented and tested offline (dev copy, switches default off): `RB_BIG_MARGIN=M` (guidance
+   `big_margin_m`: +M m contact margin for radar-tracked rocks of radius >= 10 m, i.e. a wider berth for Debris406-like
+   rocks) and `RB_KICK_GATE=P` (guidance `kick_gate`: P gate P instead of 0.3 for such rocks while their velocity
+   sigma is >= 0.4 m/s, i.e. after a contact). Closed-loop benchmark `tools/test_knock.py` (point mass on the
+   round-3 planner settings incl. burn pauses; a 26 m rock crossing at 5 m/s that the planner dodges, then a knock
+   L = 6/10/14 s before the closest approach; radar re-convergence in 4.2 s epochs with velocity errors 2.0 / 0.8 /
+   0.35 / 0.15 m/s, matching report_x_kicks): 
+   - aimed knocks (toward the no-dodge position +-15 m, <= 5 or 10 m/s; 144 episodes per variant): contacts
+     m0 6, m8 6, m15 4; g10 6, g20 6 (identical to m0). Extra fuel on the no-knock episodes: m8 +1.3 kg, m15 +2.2 kg.
+   - random knocks (uniform direction, 3-12 m/s; 600 per variant): contacts m0 28 (L6 16/200, L10 10/200, L14 2/200),
+     m15 26; m15 costs +1.7 kg per episode.
+   Trace of a contact (`KNOCK_TRACE=1`): for 4 s after the knock the track still shows the old course, the next 4 s
+   its velocity sigma is 2 m/s and P on the plan is ~0, and when the second post-knock return gives a usable state
+   (P 0.46 -> 0.95) 7 s are left, too little for 0.143 m/s^2 against a 16 m contact radius. Knocks >= 14 s before
+   the closest approach are survived already; knocks <= 10 s before are not, with any of the variants. Neither
+   switch passes; no third arm flown (A continues to 40 per arm). The switches stay in robust/ default off.
+
+## C. Launch fuel of the round-3 config (`tools/launch_waste.py`, `tools/launch_sim.py`)
+Launch waste = fuel - 4.32 kg/(m/s) x speed. Undamaged flights, medians (candidate vs baseline): conf 2.99 vs 2.42 kg
+at 15 s, m4c 3.00 vs 2.41, m5a (unloaded, first 5+5) 3.06 vs 2.33; pooled 30 vs 29 flights: 3.01 vs 2.41 at 15 s,
+4.73 vs 3.98 at 30 s, speed at 15 s 1.05 vs 1.23 m/s at equal fuel (7.56 vs 7.77 kg). The pre-launch state at the
+first tick is identical (no pre-launch cut in any flight, att 91-94 deg), the pitch-over timing too (nose within
+20 deg at 10.6 vs 10.9 s), so it is not the watchdog (dly6 / dly25, watchdog only: no difference). The old
+single-switch pair xp_brake vs xp_ctrl (XP_BRAKE = RB_BRAKE only) shows the same: speed at 15 s 0.91 vs 1.19 m/s,
+waste 2.98 vs 2.44 kg. Cause: RB_BRAKE. While the rate is above the braking curve it brakes at gain 20 with every
+tick (translation share 0), so the brake chatters through the end of the pitch-over, when the burn has started
+(nose within the 20 deg pad gate): rotation fuel up, translation ticks lost. ~0.6-0.75 kg (~1 point) per flight.
+Fix (dev copy, behind a switch, default off): `RB_BRAKE_KEEP=1` (thrust_law.py): while braking, translation keeps
+its launch share once the nose is within PAD_ALIGN (20 deg) of the burn, and the brake gain is `RB_BRAKE_K`
+(default 5) instead of 20. Offline replica `tools/launch_sim.py` (ThrustLaw + Pulser on the actuator LP replica,
+rigid body, pad, recorded tick intervals, 1-tick actuator delay, 4 draws): waste at 15 / 30 s 2.45 / 3.20 kg with
+RB_BRAKE, 2.21 / 2.93 with RB_BRAKE + RB_BRAKE_KEEP, 2.37 / 3.31 with no brake; overshoot after the nose first
+reaches 5 deg 4.9 / 4.9 / 5.4 deg. Limits: the replica reproduces the baseline waste (2.37 vs 2.41 kg in flight)
+but only +0.08 kg for RB_BRAKE (flights +0.6), and it cannot reproduce the loaded-machine overshoots (9-40 deg)
+that RB_BRAKE was made for, so the fix's flight value and its overshoot protection are NOT verified. Not flown
+(item C: no flights of its own).
+
+## Regression of the dev copy (new switches default off)
+`robust/dev` = robust/ + RB_BIG_MARGIN, RB_KICK_GATE (guidance.py, Controller.py) + RB_BRAKE_KEEP / RB_BRAKE_K
+(thrust_law.py); first-tick log line gains `bigm .. kgate .. bkeep ..`; Controller.py header byte-identical.
+With the switches off: test_gate2 (off, excess10), test_near, test_recover_plan, test_farmiss give output identical
+to robust/ (and test_gate2 identical to milestone 2's gate2_out.txt), so the earlier offline safety evidence holds.
+
+## D. Score work (owner extension, 11:00): where undamaged r3 flights lose points (`tools/m5attr.py m5a r3`)
+31 undamaged r3 flights of A (at the time): median 48.4, best quartile 53.0 (clean flights: 37.7-38.6 kg, 220 s).
+- Launch-phase dodges (mostly r13 = Debris208, 31 m, 1.4 m/s, conflict at 47-55 s, and r7/r2): planned turns of
+  3-16 m/s in sum at 20-45 s, then 400-1000 m aim misses and 2-6 m/s re-aims: 6 of 31 flights at -21..35 points;
+  the largest loss in sum (cruise fuel 387 points over 31 flights vs the best quartile).
+- Debris406 burn pause (pause15 at 38-41 s, the window edge tau = 22 s): 14 of 31 flights, arrival ~229-232 s
+  instead of ~220 s and +0.5-1 kg: ~3 points each (median 50 vs 53.5 for the no-pause clean flights).
+- Launch waste of RB_BRAKE: ~0.6-0.75 kg (~1 point) in every flight (item C).
+- Arrival: small (median 0.1 kg inside 600 m; 3 flights 11-25 kg after earlier misses). Re-aims after a dodge already
+  aim at the ship from the current position (`aim_velocity(p, ...)`), not back to the old line.
+Changes tried (offline first, then flown against r3, 12+ scored per arm, two lanes swapped):
+1. `RB_BIG_MARGIN=8 RB_KICK_GATE=0.1` (Debris406 knock fixes; offline: no gain, flown on the owner's request).
+2. `RB_BRAKE_KEEP=1` (launch waste).
+3. `RB_BIG_LOOK=35` (guidance `big_look_s`; Controller relevant() reach): settled radar rocks of radius >= 10 m
+   (velocity sigma < 0.15 m/s) are priced up to 35 s ahead instead of 22 s; other rocks keep the 22 s window
+   (samples beyond it are masked, so their decisions are unchanged). Offline closed loop `tools/test_biglook.py`
+   (launch-phase point mass, 18 threat + 18 pass episodes per rock type):
+   | rock | variant | contacts | gap median / min | extra kg | delay s | points |
+   |---|---|---|---|---|---|---|
+   | Debris406-like (13 m, 5 m/s) threat | 22 s | 0 | 7.6 / 4.5 m | 0.98 | 7.6 | 3.37 |
+   | | 35 s | 0 | 8.9 / 3.9 m | -0.15 | 8.6 | 2.14 |
+   | Debris208-like (15.7 m, 1.4 m/s) threat | 22 s | 0 | 7.0 / 4.2 m | 3.38 | 6.3 | 6.21 |
+   | | 35 s | 0 | 7.2 / 3.3 m | 1.34 | 4.4 | 2.97 |
+   | pass episodes (both) | 22 s / 35 s | 0 / 0 | unchanged | ~0 / ~0 | 0.3-1.1 | 0.06-0.23 |
+   With the switch off, test_gate2 / test_near / test_recover_plan / test_farmiss are unchanged (same as above).
+E seeds (picked at random from 1000-99999, none used before): 48386 51806 49223 64895 67041 15495 62891 10657 62013 60938.
+
+### D1 flown: k406 = r3 + RB_BIG_MARGIN=8 RB_KICK_GATE=0.1 vs r3 (m5d11-m5d13, 12:16-13:44; m5d12 single-lane:
+gpt-oss reloaded; from 13:12 `tools/ollama_guard.sh` stops gpt-oss:20b every time it is loaded while flying,
+log results/eval/ollama_guard.log; Roblox 4-6 processes at times)
+| | k406 | r3 |
+|---|---|---|
+| scored (+rig fail) | 13 (+1) | 14 |
+| undamaged 43+ / < 43 | 8 / 4 | 8 / 6 |
+| contacts / lost | 1 / 0 | 0 / 0 |
+| median / mean / worst | 45.7 / 23.8 / -102.7 | 46.0 / 31.8 / -19.4 |
+| median fuel | 42.8 kg | 44.3 kg |
+The k406 contact: Debris208 (r13) at 58 s, 33 kJ, after a launch-dodge sequence at 33-40 s (turns of 1.5-5.9 m/s, aim
+miss 1040-1160 m, nose 70-83 deg off the burn at 3.3 m/s); the +8 m margin also applies to Debris208 (r 15.7).
+Rejected: no gain, one more contact (rule).
+
+### D2 flown (run 1, m5d21-m5d23, 13:44-15:00): bkeep = r3 + RB_BRAKE_KEEP=1 vs r3 - COMPROMISED BY LOAD
+The ollama guard (13:12-14:59) stopped gpt-oss:20b 80 times: the other user's client reloaded the 12 GB model within
+30-60 s every time, so the machine spent the whole run loading it (disk / memory churn). Both arms collapsed (median
+29.6 bkeep vs 20.5 r3, median fuel 56 vs 63 kg; launch overshoot and dodge chaos). Guard stopped at 14:59 (stop file);
+from then on gpt-oss is only stopped once before each batch by chain_m5.sh. Launch numbers (robust to the load,
+concurrent): waste at 15 / 30 s 2.17 / 4.10 kg bkeep vs 2.74 / 4.90 kg r3; speed at 30 s 3.19 vs 2.96 m/s, i.e. the
+launch waste is back at the baseline level (2.35 / 4.02 kg in A). Contacts 1/11 vs 0/12: Debris481 (16 kJ, 61 s) in a
+dodge sequence after a pause, not in the launch. Re-run queued as m5d4 (after D3).
+
+## F. Why the frozen baseline did worse today (owner question, 15:00)
+### F1 (logs only; `tools/f1_timing.py`, `tools/f1_r13.py`)
+Sets: pre-submission = soak_2111_a/b, r7_gate30_h22_cam, r7_gcam_c1/c2, sub_gate_1/2, clean_room (144 scored flights
+with logs; 108 with complete status lines), today = A control arm (robust/ all off, 43 flights). The controller logs no
+tick intervals; proxies: spacing of the ~1 s status lines, depth frames per second, harness wall s per sim s, first
+tick time (robust only).
+| proxy (median / p90) | pre-submission | today control | today r3 |
+|---|---|---|---|
+| status-line gap p95 within 0-70 s | 1.20 / 1.40 s | 1.22 / 1.48 s | 1.20 / 1.50 s |
+| status gaps > 1.5 s / > 2.0 s (0-70 s) | 1.0 / 0.0 per flight | 1.0 / 0.0 | 1.0 / 0.0 |
+| depth frames/s 10-60 s / after 60 s | 2.72 / 3.28 | 2.70 / 3.24 | 2.79 / 3.21 |
+| wall s per sim s | 1.000 | 1.000 | 1.000 |
+| pitch-over overshoot (1 Hz att) | 7.8 / 19.9 deg | 8.8 / 24.1 deg | 5.5 / 26.7 deg |
+| fuel at 60 s | 30.2 kg | 30.4 kg | 34.8 kg |
+| plan switches per flight | 3 / 83 | 39 / 129 | 2 / 17 |
+| Debris208 (r13) conflict, P >= 0.3 | 12 / 144 (8 %) | 12 / 43 (28 %) | 7 / 46 (15 %) |
+| Debris208 hits | 4 / 144 | 8 / 43 | 0 / 46 |
+At 1 s resolution today's control flights were NOT slower than the 145 (same status-line spacing, frame rate and sim
+pace). The difference is in the launch: overshoot >= 20 deg in 8/43 (19 %) vs 13/144 (9 %), and Debris208 conflicts
+rise steeply with overshoot (later arrival at its crossing, ~135 m from the pad): pre 5 / 7 / 31 % conflicts for
+overshoot < 8 / 8-20 / >= 20 deg; today 11 / 31 / 62 %. The baseline then flip-flops on Debris208 (plan switches by
+tercile: contacts 0 / 4 / 20 % pre, 7 / 13 / 64 % today) - 8 of today's 12 baseline contacts are Debris208 at
+52-58 s. Status-line gaps do not predict contacts (terciles 5/7/11 % pre, 27/29/29 % today). Load recorded per batch:
+Ollama gpt-oss:20b (12 GB) loaded in 9 of 11 A batches' windows, Roblox 2-6 processes; the pre-submission sets ran
+with Roblox only. Code paths: submission/ vs robust/ (all switches off) differ only in switch-guarded blocks
+(guidance gate memory / near_fix / recover, thrust_law brake / recovery, Controller env reads and logging); with
+switches off every guarded block is inactive (checked line by line; offline planner tests identical).
+Interpretation: the pitch-over (3-13 s) is sensitive to loop jitter that 1 s proxies cannot see; today's heavier
+load gives more overshoot, a later launch and more Debris208 conflicts, which the baseline cannot handle
+(flip-flop) and round 3 can (gate memory: 0 Debris208 hits in 46). F2/F3 test this with flights.
+
+### D3 in-flight observation and fix (15:40)
+In the first D3 batch the long window made Debris208 (r13) appear at 16 s at the window edge (tau 34.8 s), and the
+planner turned 0.46 m/s at 16, 17 and 20 s (aim miss 80 -> 240 m): the window-edge slide the baseline's `edge_drop`
+comment describes. Added `RB_BIG_LOOK_EDGE=P` (guidance `big_look_edge_p`): a long-window rock whose closest approach
+on the plan in force is still at the last window sample counts only if P >= the value. Offline (test_biglook, 35 s,
+edge 0.6): Debris406-like threat 2.26 points (gap median 11.5, min 3.9 m), Debris208-like 3.17 points (7.2 / 3.3 m),
+0 contacts, pass episodes 0.08 / 0.30 points; vs 3.37 / 6.21 points with the 22 s window. Regression with defaults
+off: identical. Flown as m5d5 (blook2 = r3 + RB_BIG_LOOK=35 RB_BIG_LOOK_EDGE=0.6). Also added test-only
+`RB_TICK_SLEEP=ms` (Controller: extra sleep per loop tick) for F3.
+Queue (tools/chain_rest.sh): m5d4 bkeep re-run, m5d5 blook2, m5f31 / m5f32 (+50 / +150 ms per tick, off vs r3, 6+6
+each), m5f2 (submission/ vs robust/ off, single lane alternating, 12 each).
+
+### D3 flown: blook = r3 + RB_BIG_LOOK=35 (no edge rule) vs r3 (m5d31-m5d33, 15:08-16:45; m5d33 single-lane)
+| | blook | r3 |
+|---|---|---|
+| scored (+rig fail) | 13 (+1) | 13 (+2) |
+| undamaged 43+ / < 43 | 6 / 7 | 8 / 4 |
+| contacts / lost | 0 / 0 | 1 / 1 |
+| median / mean / worst | 38.2 / 34.6 / -8.5 | 48.6 / -159.0 / -2534.5 |
+| median fuel | 47.3 kg | 40.4 kg |
+r3 loss: Debris310 at 79.8 s moving at 33.9 m/s (pre-impact relative 36.1 m/s, 2.56 MJ), no warning in the log: a
+genuine late knock. blook: safety held, but 7 kg more median fuel - the window-edge turns described above (fixed
+version flown as m5d5). Rejected as it is.
+
+## G. Hits of the robust arms in milestone 5 and recovery (owner change: rare unavoidable hits accepted, recovery must be good)
+### G1 classification (`tools/hit_view.py`, `tools/contact_recovery.py`)
+| flight | arm | rock, speed | first hit | warning (P >= 0.3 on the rock) | avoidable? | score |
+|---|---|---|---|---|---|---|
+| m5a1_a 261122_064053 | r3 | Debris406 knocked (4.9 -> 7.8 m/s) after a pause15 dodge at 40 s | 63.0 s, 207 kJ, thrown to 35.4 m/s, spin 1.6 rad/s | radar obstacle vanished after the knock; camera track P 0.32-0.38 at tau 4.8 / 2.8 s | no (knock < 8 s before; 0.143 m/s^2 buys < 2 m in 5 s) | -2023 (the loss came 8.2 s later: Debris162, 1.81 MJ, hit at 21 m/s while tumbling backwards at 35 m/s; the planner saw it at P 0.97, tau 8.4 s, but tumble mode allows no translation and a 1.6 rad/s spin cannot be stopped in 8 s) |
+| m5d32_a 261122_15xx | r3 | Debris310 at 33.9 m/s (pre-impact relative 36.1 m/s) | 79.8 s, 2.57 MJ, loss at the hit | none in the log | no (a rock this fast crosses the 22 s window in < 1 s of warning per 36 m) | -2535 |
+| m5d13_a 261122_133729 | k406 (candidate) | Debris208, 1.4 m/s | 58.2 s, 36 kJ (2 hits) | r13 P 0.36-0.87 from 33.8 s (tau 22 s) | yes: planner chaos (turns 1.5-5.9 m/s, aim miss > 1000 m, nose 70-83 deg off at 3.3 m/s), worsened by the +8 m big margin | -103 |
+| m5d22_b | bkeep (run 1, load churn) | Debris481, 2.1 m/s | 60.8 s, 16 kJ | r35 P 0.30-0.53 from tau 11 s, Pbest 0.23-0.40; the planner kept the plan, then switched for another rock | partly (a 0.5-1 m/s dodge at tau 8-11 s was cheaper by its own costs only by < switch threshold) | -28 |
+Rarity: in 46 + 13 + 13 + 11 + 13 r3-config flights of milestone 5 (96), knocked-rock losses 2 (2 %); with the
+earlier sessions, Debris406 knocked contacts ~9 of ~400 logged flights of all versions and 2 truth-recorded knocks in 12 flights.
+### G2 recovery quality
+- RECOVERY line present in every robust hit flight (damage jump detected within 0.2 s).
+- Small hits (16-36 kJ, shuttle left at 1-4 m/s): spin < 0.1 rad/s after 15-22 s, nose within 20 deg after 24-37 s,
+  velocity error < 0.5 m/s after 74-79 s, 47-89 kg after the hit, both finished. Baseline arm (no recovery switches):
+  nose within 20 deg after 55-225 s, 54-82 kg. The post-hit burn of m5d13_a ran at 4.4 kg per m/s (8.5 -> 0.04 m/s
+  for 37.6 kg, ideal 4.32): the main-jet burn is near ideal; the loss is the physics (the hit stopped the shuttle at
+  1.6 m/s, 1180 m out: a second launch of ~6 m/s = 26 kg) plus ~10 s of despin / re-point delay (~2 points) and the
+  pre-hit dodge chaos. Ideal recovery from 1.6 m/s at 1180 m: re-accelerate to ~7.4 m/s (25 kg) and arrive ~20 s
+  later than an undisturbed flight: score about -35 at 36 kJ vs -103 actual; the difference is the 37 kg of pre-hit
+  launch dodges in that flight, not the recovery.
+- Heavy hits: thrown to 21-35 m/s. Reversing 35 m/s on the main jets (0.175 m/s^2) takes >= 200 s and ~150 kg plus
+  ~1300 m of return: finishing inside 400 s is marginal at best and the damage (1.8-2.6 MJ) already ends the run
+  ('loss' end condition at the hit or the next hit). No controller action changes those two losses.
+
+## State at stop (owner request, ~17:35 22 Nov)
+All chains, runners, guards and sims stopped; no queue lock; the 7 frozen submission/*.py copied back into
+STU4-Solution and verified with cmp (BasicController.py / UserAPI.py there are framework files); STU4-Sim
+SpawnDebris.py has seed = 8193.
+Finished: A (r3 46 vs base 43: contacts 1 vs 12, p = 0.001; lost 1 vs 2; median 48.0 vs 42.0), D1 (k406 rejected),
+D2 run 1 (load-compromised), D3 (blook without edge rule rejected), F1 (logs), G1/G2 (analysis) - tables above.
+D4 (bkeep re-run, m5d41-42, partial, rig failures 6 under memory pressure): bkeep 5 scored, 0 contacts, median 48.2,
+mean 44.0, worst 27.0, fuel 42.9 kg; r3 3 scored, 0 contacts, median 38.3. Pooled D2 + D4 launch waste (17 vs 17):
+2.25 / 4.18 kg at 15 / 30 s bkeep vs 2.72 / 4.85 r3. Contacts pooled bkeep 1/16 (Debris481, load run) vs r3 0/15.
+Not flown: D4 to 12 per arm, D5 (blook2 = RB_BIG_LOOK=35 RB_BIG_LOOK_EDGE=0.6), F2 (submission/ vs robust/ off,
+single lane), F3 (RB_TICK_SLEEP=50 / 150, off vs r3), G3 (kickY recovery on vs off, 3+3), the stack vs baseline
+(20 per arm), E (seeds 48386 51806 49223 64895 67041 15495 62891 10657 62013 60938). Queue scripts:
+tools/chain_q2.sh (D5, F3, G3), F2 line in tools/chain_rest.sh.
+Recommended env (unchanged, round 3): RB_WATCH=1 RB_BRAKE=1 RB_NEAR=1 RB_GATE_HOLD=10 RB_GATE_MODE=excess
+RB_RECOVER=1 RB_RECOVER_DEG=60 RB_RECOVER_BURN_DEG=30 RB_RECOVER_PLAN=1 RB_RECOVER_DVBURN=1 RB_RECOVER_SCORE=1.
+robust/*.py = robust/dev/*.py (identical): round 3 code plus default-off switches. Unverified in flight / not accepted:
+RB_BRAKE_KEEP (+RB_BRAKE_K; launch fix, safety not shown at 12 per arm), RB_BIG_LOOK_EDGE with RB_BIG_LOOK (offline
+only), RB_BIG_MARGIN / RB_KICK_GATE (rejected), RB_TICK_SLEEP (test only). With all of them off, offline planner tests
+are identical to round 3. Pre-milestone-5 robust copy: robust/dev/backup_r3/.

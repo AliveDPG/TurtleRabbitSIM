@@ -1,0 +1,4 @@
+reference velocity change (no knock, 30 m offset, first variant) 3.72 m/s; kg below are over that
+m0    no-knock: n=8 extra kg mean -0.50 max  2.34 contacts 0 | knock: n=144 contacts 6 (L6:2/48 L10:0/48 L14:4/48) gap med  30.4 extra kg mean -0.13
+m8    no-knock: n=8 extra kg mean  0.78 max  2.83 contacts 0 | knock: n=144 contacts 6 (L6:3/48 L10:0/48 L14:3/48) gap med  35.1 extra kg mean  0.81
+m15   no-knock: n=8 extra kg mean  1.70 max  2.83 contacts 1 | knock: n=144 contacts 4 (L6:2/48 L10:0/48 L14:2/48) gap med  38.4 extra kg mean  1.73
