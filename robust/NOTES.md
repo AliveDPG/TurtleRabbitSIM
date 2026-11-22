@@ -664,3 +664,63 @@ robust/*.py = robust/dev/*.py (identical): round 3 code plus default-off switche
 RB_BRAKE_KEEP (+RB_BRAKE_K; launch fix, safety not shown at 12 per arm), RB_BIG_LOOK_EDGE with RB_BIG_LOOK (offline
 only), RB_BIG_MARGIN / RB_KICK_GATE (rejected), RB_TICK_SLEEP (test only). With all of them off, offline planner tests
 are identical to round 3. Pre-milestone-5 robust copy: robust/dev/backup_r3/.
+
+# Milestone 5, resumed (18:19, after the owner's stop)
+Rig free at 18:19 (fast-mode work cleaned up); queue `tools/chain_q3.sh` (G3, G4, F3, D5, D4 finish, F2).
+### G3 kick tests (m5g31-m5g33): RB_KICK=70 RB_KICK_STRONG=50 RB_KICK_DIR=y (50 s blind push on +y, then spin-up to
+0.5 rad/s, released at ~120-129 s), krec = r3 vs knorec = r3 without the RB_RECOVER* switches
+Rig notes: m5g31 lane b failed its 3 flights at setup (installed copy still the frozen submission/ until lane a's
+install); m5g31_a flight 1 (261122_181947) ran without the kick and without robust's first-tick line (the frozen
+copy): excluded. 4 flights hit rocks during the blind push itself (test artefact): krec 648 kJ at 47 s (before the
+kick: Debris406 knocked to 18.9 m/s, 4 s warning), 235 / 81 / 91 kJ; knorec 1.64 MJ at 82 s.
+| | recovery on (krec) | recovery off (knorec) |
+|---|---|---|
+| clean kicks (no hit during the push) | 3 (+1 lightly hit, 4 kJ: -22.6) | 5 |
+| finished | 3 of 3 | 3 of 5 (1 unfinished at 400 s, 137 m out; 1 sim thrust stall at 325 s, 176 kg) |
+| scores of finished | -181.3, -123.4, -120.4 (mean -141.7) | -167.0, -163.4, -189.6 (mean -173.3) |
+| arrival / fuel of finished | 334-397 s / 153-197 kg (mean 169) | 356-388 s / 187-205 kg (mean 193) |
+Recovery on: every clean kick finished, ~24 kg and ~30 points better on average; off: 2 of 5 did not finish.
+### G4 heavy kick (m5g41, one batch): RB_KICK=50 RB_KICK_STRONG=120 RB_KICK_DIR=y (120 s blind push on +y + spin-up;
+released at 179 s with |v| 16.6-17.9 m/s and a 10-13 m/s velocity error, the real post-hit state of the heavy hits)
+recovery on: 2 flights (+1 rig failure), both unfinished at 400 s, 212-213 kg, 1898 / 2429 m out;
+recovery off: 3 flights, all unfinished, 194-238 kg, 845 (after a 140 kJ hit) / 2886 / 2274 m out.
+With 220 s left, reversing ~17 m/s on the main jets (0.175 m/s^2) takes ~100 s and the shuttle is by then
+~1.5-2 km from the ship: finishing inside 400 s is not physically possible from such a state, with or without the
+recovery logic. An unfinished flight has no score, so after a heavy hit there is no damage-limiting behaviour that
+changes the outcome; the recovery logic used ~25 kg less and ended closer.
+### F3 loop-rate sensitivity (m5f31: +50 ms per tick, m5f32: +150 ms per tick; RB_TICK_SLEEP, test only)
+| added delay per tick | arm | scored | contacts | median | mean | median fuel | overshoot median / p90 | plan switches | frames/s 10-60 s |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 (A, today) | off | 43 | 12 (28 %) | 42.0 | -39.8 | 45.0 kg | 8.8 / 24.1 deg | 39 | 2.70 |
+| 0 (A, today) | r3 | 46 | 1 (2 %) | 48.0 | -5.6 | 40.5 kg | 5.5 / 26.7 deg | 2 | 2.79 |
+| +50 ms | off | 7 | 1 (Debris208) | 37.8 | 27.5 | 50.1 kg | 14.6 / 31.0 deg | 59 | 2.31 |
+| +50 ms | r3 | 8 | 0 | 49.1 | 46.8 | 40.5 kg | 2.5 / 19.9 deg | 2 | 2.58 |
+| +150 ms | off | 7 | 1 (Debris208) | 27.9 | 14.6 | 57.8 kg | 30.7 / 48.2 deg | 59 | 1.61 |
+| +150 ms | r3 | 7 | 1 (Debris406 knocked, 6.1 m/s, 196 kJ) | 32.6 | -9.5 | 53.5 kg | 4.0 / 4.5 deg | 9 | 1.68 |
+(m5f311 / m5f321 were single-lane batches while gpt-oss was loaded.) The frozen-equivalent controller degrades
+steadily with loop delay: pitch-over overshoot doubles per step, the launch arrives late at Debris208, the planner
+flip-flops (59 switches) and the median falls 42 -> 38 -> 28. Round 3 keeps the pitch-over (RB_BRAKE: overshoot
+2.5-4 deg even at +150 ms) and the dodge logic (gate memory) intact and holds its score at +50 ms (49.1); at +150 ms
+(frames/s 1.7) it also loses ~15 points. This supports F1: the PC's load acts through the launch.
+Proposals (not implemented): measure dt and use it where 0.2 s is assumed (planner cadence, latency_s), shed load
+when ticks run long (fewer turn candidates, skip a depth frame), run the planner on a time budget. RB_BRAKE_KEEP
+must keep RB_BRAKE's overshoot protection under load before it can replace it (not tested under load).
+
+## State at final stop (owner ended the robust work, ~23:10 22 Nov)
+All chains, runners, evaluate/run_sim pythons and sims stopped; no queue lock; the 7 frozen submission/*.py copied into
+the rig's SOLUTION_REPO (%LOCALAPPDATA%/SimDynamX/STPro/Assets/Repos/STU4-Solution) and verified with cmp;
+SpawnDebris.py seed = 8193. Note: at 22:07 an `ollama stop` from chain_m5.sh restarted the Ollama server (it was
+not running) and an `ollama ps | grep` pipe then hung the chain; chain_m5.sh now writes `ollama ps` to a file with a
+timeout. The Ollama server was left running (no model loaded).
+Flown since the first stop (sections above): G3 kickY (recovery on 3/3 clean kicks finished, mean -141.7, 169 kg;
+off 3/5, mean -173.3, 193 kg), G4 heavy kick (no finish possible either way), F3 (+50 / +150 ms per tick).
+D4 RB_BRAKE_KEEP re-run (m5d41-m5d44): bkeep 14 scored, 0 contacts, 0 lost, median 47.0, mean 40.3, worst 12.5,
+fuel 42.9 kg; r3 12 scored, 0 contacts, median 42.9, mean 40.3, worst 16.7, fuel 45.9 kg. Passes the acceptance rule
+on the re-run (0 vs 0 contacts, 12+ per arm); with the load-compromised run 1, 1/25 vs 0/24. Launch waste back to
+baseline. Not tested under a slow loop (F3 shows RB_BRAKE's overshoot protection matters there).
+D5 blook2 (RB_BIG_LOOK=35 RB_BIG_LOOK_EDGE=0.6): only 2 + 2 flown: blook2 47.5, 49.2; r3 51.6, -163.1 (contact).
+Unflown: D5 to 12 per arm, F2 (submission/ vs robust/ off; code diff shows switch-guarded differences only), the stack
+vs frozen baseline (20+ per arm), E (seeds 48386 51806 49223 64895 67041 15495 62891 10657 62013 60938).
+Recommended env: round 3 (RB_WATCH=1 RB_BRAKE=1 RB_NEAR=1 RB_GATE_HOLD=10 RB_GATE_MODE=excess RB_RECOVER=1
+RB_RECOVER_DEG=60 RB_RECOVER_BURN_DEG=30 RB_RECOVER_PLAN=1 RB_RECOVER_DVBURN=1 RB_RECOVER_SCORE=1); candidate to add
+after a stack measurement and a slow-loop check: RB_BRAKE_KEEP=1. robust/*.py = robust/dev/*.py.

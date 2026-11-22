@@ -28,9 +28,10 @@ while [ $(( $(date +%s) - T0 )) -lt $CAP ]; do
   echo "$(date +%T) $LX=$nx $LY=$ny" >> $LOG
   [ $nx -ge $NEED ] && [ $ny -ge $NEED ] && break
   [ -e results/eval/$P.stop ] && echo "$(date +%T) stop file" >> $LOG && break
-  if ollama ps 2>/dev/null | grep -q "gpt-oss:20b"; then ollama stop gpt-oss:20b >/dev/null 2>&1; echo "$(date +%T) stopped gpt-oss:20b (owner-allowed)" >> $LOG; sleep 20; fi
+  if tasklist | grep -qi "ollama.exe"; then timeout 15 ollama ps > /tmp/m5_ollama_ps.txt 2>/dev/null < /dev/null
+    if grep -q "gpt-oss:20b" /tmp/m5_ollama_ps.txt; then timeout 30 ollama stop gpt-oss:20b > /dev/null 2>&1 < /dev/null; echo "$(date +%T) stopped gpt-oss:20b (owner-allowed)" >> $LOG; sleep 45; fi; fi
   i=$((i + 1)); mem=$(powershell -NoProfile -Command "[int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1024)")
-  rob=$(tasklist | grep -i roblox | awk '{s+=$5} END {print NR" procs"}'); oll=$(ollama ps 2>/dev/null | tail -n +2 | awk '{print $1}' | tr '\n' ' ')
+  rob=$(tasklist | grep -i roblox | awk '{s+=$5} END {print NR" procs"}'); oll=$(tail -n +2 /tmp/m5_ollama_ps.txt 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
   if [ "$mem" -ge 5000 ]; then
     if [ $((i % 2)) -eq 1 ]; then EA=$EX; EB=$EY; AA=$LX; AB=$LY; else EA=$EY; EB=$EX; AA=$LY; AB=$LX; fi
     echo "{\"arm\": \"$AA\"}" > results/eval/$P${i}_a.arm; echo "{\"arm\": \"$AB\"}" > results/eval/$P${i}_b.arm
